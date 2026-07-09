@@ -1,0 +1,68 @@
+"""Weight download utility with caching in ~/.cache/muscriptor/."""
+
+import hashlib
+import urllib.request
+from pathlib import Path
+from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub.utils import EntryNotFoundError
+
+
+_CACHE_DIR = Path.home() / ".cache" / "muscriptor"
+
+
+def download_if_necessary(url: str | Path) -> Path:
+    """Resolve a weights location to a local file, downloading if necessary.
+
+    Args:
+        url: Where to find the weights:
+            - ``hf://<repo_id>/<path/in/repo>`` — downloaded via huggingface_hub.
+            - ``http(s)://…`` — fetched with a plain HTTP GET and cached under
+              the cache dir (filename prefixed with a hash of the URL).
+            - anything else (a local path, as ``str`` or ``Path``) — used as-is;
+              nothing is downloaded, but the file must already exist.
+
+    Returns:
+        Path to the local file.
+    """
+    if isinstance(url, str) and url.startswith("hf://"):
+        org, name, hf_filename = url[len("hf://") :].split("/", 2)
+        cached = hf_hub_download(repo_id=f"{org}/{name}", filename=hf_filename)
+        return Path(cached)
+
+    if isinstance(url, str) and url.startswith(("http://", "https://")):
+        # Prefix the cache filename with a hash of the URL so two different URLs
+        # that share a filename don't map to the same file.
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        filename = url.split("/")[-1].split("?")[0]
+        url_hash = hashlib.sha256(url.encode()).hexdigest()[:8]
+        dest = _CACHE_DIR / f"{url_hash}_{filename}"
+        if dest.exists():
+            return dest
+        print(f"Downloading {filename} …")
+        urllib.request.urlretrieve(url, dest)
+        return dest
+
+    # Local file — nothing to download, just check it's there.
+    path = Path(url)
+    if not path.exists():
+        raise FileNotFoundError(f"weights file not found: {path}")
+    return path
+
+
+def download_companion(url: str | Path, filename: str) -> Path | None:
+    """Best-effort fetch of a sibling file from the same ``hf://`` repo.
+
+    Used to grab a model's ``config.json`` next to its weights. Returns the
+    local path, or ``None`` if ``url`` isn't an ``hf://`` URL or the file can't
+    be fetched — repo/file missing, gated, or offline (so callers can fall back
+    to other detection schemes rather than failing the whole load).
+    """
+    if not (isinstance(url, str) and url.startswith("hf://")):
+        return None
+    org, name, _ = url[len("hf://") :].split("/", 2)
+    try:
+        cached = hf_hub_download(repo_id=f"{org}/{name}", filename=filename)
+    except (EntryNotFoundError, HfHubHTTPError):
+        return None
+    return Path(cached)

@@ -1,0 +1,16 @@
+*.safetensors
+*.pyc
+*.mid
+!headache_mastered.mid
+*.wav
+*.mp3
+*.ogg
+*.sf2
+web/node_modules
+web/dist
+web/public/soundfonts/
+web/tsconfig.tsbuildinfo
+/dist
+*.egg-info
+__pycache__
+.DS_Store

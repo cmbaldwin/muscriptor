@@ -1,0 +1,21 @@
+# Keep the multi-GB weights, sample audio and local envs out of the build
+# context — weights are mounted at runtime, not baked into the image.
+*.safetensors
+*.wav
+*.mp3
+*.ogg
+*.mid
+.venv
+web/node_modules
+web/dist
+# Regenerated inside the web-builder stage from MuseScore_General.sf2.
+web/public/soundfonts
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+test.ipynb
+Dockerfile
+.dockerignore
