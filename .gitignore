@@ -13,3 +13,8 @@ web/tsconfig.tsbuildinfo
 *.egg-info
 __pycache__
 .DS_Store
+
+# Kamal local secrets (never commit)
+.kamal/secrets
+.env
+.env.*

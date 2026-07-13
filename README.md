@@ -40,6 +40,19 @@ on the first `uvx muscriptor` run — requires a (free) HuggingFace account:
 
 The weights are then downloaded on first use and cached locally.
 
+## Deploy (Kamal)
+
+Kamal 2 config is included (placeholders for your host/registry). See
+[docs/KAMAL.md](docs/KAMAL.md).
+
+```bash
+export HF_TOKEN=hf_...          # Hugging Face read token (gated weights)
+cp .kamal/secrets.example .kamal/secrets
+# edit config/deploy.yml: server IP, registry, hostname
+kamal setup                     # first time
+kamal deploy
+```
+
 ## Try it locally
 
 You can try it locally with the web UI with:
@@ -47,6 +60,10 @@ You can try it locally with the web UI with:
 ```bash
 uvx muscriptor serve
 ```
+
+In the web UI you can **edit before MIDI** (multi-region trim, gain, fades),
+then read a **Fake book** lead sheet: auto chords + melody cues that scroll
+with playback — for playing along at the piano.
 
 or with the CLI:
 

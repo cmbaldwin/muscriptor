@@ -1,0 +1,24 @@
+#!/bin/sh
+# Kamal / container entrypoint for muscriptor serve.
+set -e
+
+# Seed HF cache volume from image prewarm (soundfonts) on first boot.
+if [ -d /root/.cache/huggingface ] && [ ! -f /data/huggingface/.seeded ]; then
+  echo "▶ seeding HF cache volume from image…"
+  mkdir -p /data/huggingface
+  cp -a /root/.cache/huggingface/. /data/huggingface/ 2>/dev/null || true
+  touch /data/huggingface/.seeded
+fi
+
+# CPU-friendly defaults. Override via deploy.yml env.
+PORT="${PORT:-8000}"
+MODEL="${MUSCRIPTOR_MODEL:-small}"
+DEVICE="${MUSCRIPTOR_DEVICE:-cpu}"
+
+echo "▶ muscriptor serve host=0.0.0.0 port=${PORT} model=${MODEL} device=${DEVICE}"
+
+exec uv run muscriptor serve \
+  --host 0.0.0.0 \
+  --port "${PORT}" \
+  --model "${MODEL}" \
+  --device "${DEVICE}"

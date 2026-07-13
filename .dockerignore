@@ -17,5 +17,10 @@ __pycache__
 .pytest_cache
 .ruff_cache
 test.ipynb
-Dockerfile
-.dockerignore
+.kamal
+docs
+tests
+swarm.yml
+deploy.sh
+.pre-commit-config.yaml
+.github

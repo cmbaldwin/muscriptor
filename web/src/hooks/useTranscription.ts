@@ -52,6 +52,8 @@ export interface TranscriptionDeps {
   setUserScrolled: (v: boolean) => void;
   /** Mutated so the download anchor can name the saved file. */
   midiFilenameRef: RefObject<string>;
+  /** Finalized notes for fake-book / chord analysis (empty while streaming). */
+  setNotes?: (notes: import("../pianoroll").RollNote[]) => void;
 }
 
 /**
@@ -74,6 +76,7 @@ export function useTranscription(deps: TranscriptionDeps) {
     setCurrentFile,
     setUserScrolled,
     midiFilenameRef,
+    setNotes,
   } = deps;
 
   // Names already surfaced in the instrument list this run.
@@ -99,6 +102,7 @@ export function useTranscription(deps: TranscriptionDeps) {
     openNotesRef.current.clear();
     audio.reset();
     setUserScrolled(false);
+    setNotes?.([]);
   }
 
   function clearMidi() {
@@ -203,6 +207,8 @@ export function useTranscription(deps: TranscriptionDeps) {
       if (isStale()) return;
       // Stop the transport ~0.3 s after the last note ends.
       if (maxEnd > 0) audio.scheduleStop(maxEnd + 0.3);
+      // Snapshot notes for fake-book / chord view.
+      setNotes?.(rollRef.current?.getNotes() ?? []);
       setAppState("done");
     } catch (e) {
       // An abort (from being superseded) surfaces here as an error — ignore it

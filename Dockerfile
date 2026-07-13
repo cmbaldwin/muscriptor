@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1
+# Multi-stage image for Kamal (and the original swarm deploy).
+# Frontend is built here so the wheel/image always has a current UI.
+
 FROM node:22-bookworm-slim AS web-builder
 WORKDIR /web
 
@@ -15,10 +18,12 @@ RUN pnpm run build
 
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS runtime
 
-
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_FROZEN=1
+    UV_FROZEN=1 \
+    # HuggingFace cache lives on a Kamal volume so weights survive deploys.
+    HF_HOME=/data/huggingface \
+    HUGGINGFACE_HUB_CACHE=/data/huggingface/hub
 
 WORKDIR /app
 
@@ -36,6 +41,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # into the HF hub cache so a fresh container doesn't download them on first
 # use. Runs off just the two files it needs, before the full source COPY,
 # so day-to-day code changes don't re-trigger the download.
+# Note: HF_HOME is /data/huggingface but /data may not exist yet at build time —
+# use a build-time cache dir, then runtime volume provides /data.
+ENV HF_HOME=/root/.cache/huggingface \
+    HUGGINGFACE_HUB_CACHE=/root/.cache/huggingface/hub
 COPY muscriptor/soundfonts.py muscriptor/utils/download.py /tmp/prewarm/
 RUN /app/.venv/bin/python -c "\
 import sys; sys.path.insert(0, '/tmp/prewarm'); \
@@ -44,6 +53,10 @@ download.download_if_necessary(soundfonts.SF2_URL); \
 download.download_if_necessary(soundfonts.SF3_URL)" \
     && rm -rf /tmp/prewarm
 
+# Runtime cache path (Kamal volume mount)
+ENV HF_HOME=/data/huggingface \
+    HUGGINGFACE_HUB_CACHE=/data/huggingface/hub
+
 COPY pyproject.toml uv.lock README.md ./
 COPY muscriptor/ ./muscriptor/
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -51,6 +64,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY --from=web-builder /muscriptor/web_dist ./muscriptor/web_dist
 
+COPY bin/docker-entrypoint /app/bin/docker-entrypoint
+RUN chmod +x /app/bin/docker-entrypoint \
+    && mkdir -p /data/huggingface
 
 EXPOSE 8000
-ENTRYPOINT ["uv", "run", "muscriptor", "serve", "--host", "0.0.0.0"]
+
+# Kamal proxy → container:8000. Model/device via MUSCRIPTOR_* env.
+ENTRYPOINT ["/app/bin/docker-entrypoint"]

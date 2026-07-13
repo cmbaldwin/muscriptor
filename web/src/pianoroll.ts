@@ -133,6 +133,16 @@ export class PianoRoll {
     if (n.start > this.latestNoteStart) this.latestNoteStart = n.start;
   }
 
+  /** Snapshot of notes for chord / fake-book analysis (shallow copies). */
+  getNotes(): RollNote[] {
+    return this.notes.map((n) => ({
+      pitch: n.pitch,
+      start: n.start,
+      end: n.end,
+      instrument: n.instrument,
+    }));
+  }
+
   /**
    * Record a note's final end time (its `end` event arrived). Beyond driving the
    * left-to-right reveal, this restacks same-pitch notes that overlap `n` in

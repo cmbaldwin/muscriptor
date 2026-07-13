@@ -10,6 +10,8 @@ import { InstrumentList } from "./components/InstrumentList";
 import { DropOverlay } from "./components/DropOverlay";
 import { Footer } from "./components/Footer";
 import { WelcomeScreen } from "./components/WelcomeScreen";
+import { FakeBook } from "./components/FakeBook";
+import type { RollNote } from "./pianoroll";
 
 /**
  * A failure surfaced on the welcome screen. `server` means the backend is
@@ -21,6 +23,7 @@ export type AppError = { kind: "server" | "file"; message: string };
 import { ProgressEstimator, formatClock } from "./progress";
 
 type Screen = "welcome" | "transcribe";
+type ResultView = "roll" | "fakebook";
 
 // Bundled demo track (web/public/example.mp3) plus a sensible conditioning
 // guess — it's a rock recording, so guitars, bass, drums, and vocals.
@@ -67,6 +70,10 @@ export function App() {
   // True while a file is being dragged over the window. On the welcome screen
   // this swaps the panel's prompt in place instead of showing the overlay.
   const [dragging, setDragging] = useState(false);
+  const [resultView, setResultView] = useState<ResultView>("roll");
+  const [notes, setNotes] = useState<RollNote[]>([]);
+  // Playback seconds for fake-book highlight (polled lightly, not 60fps React).
+  const [sheetTime, setSheetTime] = useState(0);
 
   const midiFilenameRef = useRef("transcription.mid");
   // Mirror of the selected conditioning set, read at submit time without
@@ -95,16 +102,17 @@ export function App() {
     setCurrentFile,
     setUserScrolled,
     midiFilenameRef,
+    setNotes,
   });
-  // Start transcribing the file picked on the welcome screen and switch views.
-  // Called from a button click, so the AudioContext unlock inside `transcribe`
-  // still happens under a user gesture.
-  function startTranscription() {
-    if (selectedFile === null) return;
+  // Start transcribing the (possibly trimmed) file from the welcome editor and
+  // switch views. Called from a button click so the AudioContext unlock inside
+  // `transcribe` still happens under a user gesture.
+  function startTranscription(file: File) {
     // Drop any leftover file error from a previous failed attempt.
     setError(null);
+    setSelectedFile(file);
     setScreen("transcribe");
-    transcribe(selectedFile);
+    transcribe(file);
   }
 
   // Tear down the current transcription (in-flight or finished) and return to
@@ -123,8 +131,18 @@ export function App() {
     setMidiBlob(null);
     setUserScrolled(false);
     setAppState("idle");
+    setNotes([]);
+    setResultView("roll");
+    setSheetTime(0);
     setScreen("welcome");
   }
+
+  // ~8 Hz clock for fake-book bar highlight (cheap).
+  useEffect(() => {
+    if (screen !== "transcribe" || resultView !== "fakebook") return;
+    const id = window.setInterval(() => setSheetTime(audio.seconds), 120);
+    return () => clearInterval(id);
+  }, [screen, resultView, audio]);
 
   // "Transcribe another file" (also the wordmark, on the transcribe screen):
   // confirm (the work is about to be discarded), then tear down and go back.
@@ -361,9 +379,75 @@ export function App() {
             }}
           />
 
-          <PianoRollCanvas rollRef={rollRef} audio={audio} setUserScrolled={setUserScrolled} />
+          {/* Piano roll vs fake-book (lead sheet) reader */}
+          <div className="col-span-full flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted">View</span>
+            <div className="inline-flex rounded-lg border border-line bg-surface p-0.5">
+              <button
+                type="button"
+                className={clsx(
+                  "rounded-md border-0 px-3 py-1.5 text-sm",
+                  resultView === "roll"
+                    ? "bg-accent text-white"
+                    : "bg-transparent text-muted hover:text-content",
+                )}
+                onClick={() => setResultView("roll")}
+              >
+                Piano roll
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded-md border-0 px-3 py-1.5 text-sm",
+                  resultView === "fakebook"
+                    ? "bg-accent text-white"
+                    : "bg-transparent text-muted hover:text-content",
+                )}
+                onClick={() => {
+                  // Refresh from the roll so mid-stream / late finalize still works
+                  const snap = rollRef.current?.getNotes() ?? [];
+                  if (snap.length > 0) setNotes(snap);
+                  setResultView("fakebook");
+                }}
+                title="Chord chart + melody cues for reading at the piano"
+              >
+                Fake book
+              </button>
+            </div>
+            {resultView === "fakebook" && appState === "transcribing" && (
+              <span className="text-xs text-muted">
+                Chart fills in when transcription finishes…
+              </span>
+            )}
+          </div>
 
-          <InstrumentList instruments={instruments} given={condSelected} audio={audio} rollRef={rollRef} />
+          {resultView === "roll" ? (
+            <>
+              <PianoRollCanvas
+                rollRef={rollRef}
+                audio={audio}
+                setUserScrolled={setUserScrolled}
+              />
+              <InstrumentList
+                instruments={instruments}
+                given={condSelected}
+                audio={audio}
+                rollRef={rollRef}
+              />
+            </>
+          ) : (
+            <FakeBook
+              notes={notes}
+              currentTime={sheetTime}
+              title={
+                currentFile?.name.replace(/\.[^.]+$/, "") || "Lead sheet"
+              }
+              onSeek={(t) => {
+                audio.seek(t);
+                setSheetTime(t);
+              }}
+            />
+          )}
 
           {/* Below the roll: the transcription job itself — progress, export,
               and starting over. */}

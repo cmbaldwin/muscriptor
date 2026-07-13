@@ -7,14 +7,15 @@ import {
 } from "react";
 import clsx from "clsx";
 import { ConditioningPanel } from "./ConditioningPanel";
+import { AudioEditor } from "./AudioEditor";
 import type { AppError } from "../App";
 
 const SERVER_DOWN = "The muscriptor server is temporarily unavailable.";
 
 /**
- * First screen of the two-step flow: pick an audio file, then optionally choose
- * conditioning instruments, then hit "Transcribe" to hand off to the main view.
- * Transcription doesn't start until the button is clicked.
+ * First screen of the two-step flow: pick an audio file, trim/edit it, then
+ * optionally choose conditioning instruments, then hit "Transcribe" to hand
+ * off to the main view. Transcription doesn't start until the button is clicked.
  */
 export function WelcomeScreen(props: {
   selectedFile: File | null;
@@ -23,7 +24,8 @@ export function WelcomeScreen(props: {
   onUseExample: () => Promise<void>;
   condSelected: Set<string>;
   onCondChange: (next: Set<string>) => void;
-  onTranscribe: () => void;
+  /** Receives the final (possibly trimmed) file ready for transcription. */
+  onTranscribe: (file: File) => void;
   /** True while a file is dragged over the window; swaps the prompt in place. */
   dragging: boolean;
   /** A server-down notice replaces the picker; a file error sits beside it. */
@@ -155,6 +157,9 @@ export function WelcomeScreen(props: {
             >
               {selectedFile.name}
             </p>
+            <p className="m-0 text-sm text-muted">
+              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB · trim below before MIDI
+            </p>
             <button onClick={() => fileInputRef.current?.click()}>
               Choose a different file
             </button>
@@ -170,15 +175,16 @@ export function WelcomeScreen(props: {
 
       {error?.kind !== "server" && selectedFile !== null && (
         <>
+          <AudioEditor
+            key={`${selectedFile.name}-${selectedFile.size}-${selectedFile.lastModified}`}
+            file={selectedFile}
+            onReady={(edited) => {
+              setError(null);
+              onTranscribe(edited);
+            }}
+            continueLabel="Transcribe"
+          />
           <ConditioningPanel selected={condSelected} onChange={onCondChange} />
-          <div className="flex justify-end">
-            <button
-              className="btn-primary rounded-xl px-9 py-3 text-base"
-              onClick={onTranscribe}
-            >
-              Transcribe
-            </button>
-          </div>
         </>
       )}
     </main>
