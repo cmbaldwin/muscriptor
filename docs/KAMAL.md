@@ -1,122 +1,73 @@
 # Kamal deploy — muscriptor
 
-Runs **MuScriptor** (audio→MIDI web UI + API) with Kamal 2:
+Audio→MIDI service on the shared moab host. **Low public surface:** short hostname, CPU/`small` model, no marketing deploy notes in the app.
 
 | Piece | Value |
 |-------|--------|
+| Host | `ms.moab.jp` |
+| Service | `muscriptor` |
+| Image | `moab/muscriptor` (ECR `ap-southeast-2`) |
 | App port | `8000` |
 | Health | `GET /health` |
 | Defaults | `MUSCRIPTOR_MODEL=small`, `MUSCRIPTOR_DEVICE=cpu` |
-| Secrets | `HF_TOKEN`, TLS cert/key (if using origin PEMs) |
+| Secrets | CF origin PEMs, `HF_TOKEN`, ECR password |
+| Server | `5.223.51.74` (kamal-proxy) |
 
-Upstream Kyutai deploy used Docker Swarm + GPU (`swarm.yml`). On a typical
-VPS without a GPU, start with **small** on **cpu**. Use `medium`/`cuda` only
-on a GPU machine.
+Upstream Kyutai used Docker Swarm + GPU (`swarm.yml`). This box is CPU-only.
 
 ## One-time setup
 
-### 1. DNS + TLS
-
-Point your hostname (e.g. `muscriptor.example.com`) at the server. If you use
-Cloudflare in front of kamal-proxy with origin certificates, set SSL/TLS mode
-to **Full** (not Flexible).
-
-### 2. Container registry
-
-Create a repository for the image name in `config/deploy.yml` (ECR, GHCR, Docker
-Hub, etc.) and ensure the deploy machine can push/pull.
-
-### 3. Hugging Face
-
-1. Create a free account at https://huggingface.co  
-2. Accept the model license on e.g. https://huggingface.co/MuScriptor/muscriptor-small  
-3. Create a read token: https://huggingface.co/settings/tokens  
-4. Export before deploy: `export HF_TOKEN=hf_...`
-
-### 4. Secrets file
-
 ```bash
-cd /path/to/muscriptor
+# DNS: CNAME ms → moab.jp (proxied). Zone SSL Full (strict).
+export CLOUDFLARE_API_TOKEN=…
+~/.grok/skills/moab-fly-deploy/scripts/ensure-moab-cname.sh ms
+
+# ECR
+aws ecr create-repository --repository-name moab/muscriptor \
+  --region ap-southeast-2 --profile default \
+  --image-scanning-configuration scanOnPush=true 2>/dev/null || true
+
+# Secrets
 cp .kamal/secrets.example .kamal/secrets
-# edit placeholders; ensure HF_TOKEN is exported in your shell
-export HF_TOKEN=hf_...
+export HF_TOKEN=hf_...   # accept license on huggingface.co/MuScriptor/muscriptor-small
 ```
 
-`.kamal/secrets` must **never** be committed (see `.gitignore`).
-
-### 5. Fill `config/deploy.yml`
-
-Replace:
-
-- `YOUR_SERVER_IP`
-- `YOUR_REGISTRY_NAMESPACE` / registry `server`
-- `proxy.host`
-
-### 6. Kamal
+Accept the gated model license, then deploy:
 
 ```bash
-gem install kamal   # or: brew install kamal
-kamal setup         # first time only
+./scripts/deploy-preflight.sh   # optional
+kamal setup                     # first time only
 kamal deploy
+curl -sS https://ms.moab.jp/health
 ```
 
-First deploy can take several minutes: image build (Node UI + Python +
-soundfonts) plus HF weight download into the `muscriptor_hf_cache` volume.
+First deploy is slow: image build + HF weight download into volume `muscriptor_hf_cache`.
 
 ## Day-to-day
 
 ```bash
-export HF_TOKEN=hf_...   # only needed if weights missing / new model
+export HF_TOKEN=hf_...   # only if volume empty / model change
 kamal deploy
 kamal app logs -f
-kamal health             # alias → curl /health inside container
-kamal shell
+kamal health
 ```
 
-### Change model / device
-
-Edit `config/deploy.yml`:
+### Model / device
 
 ```yaml
 env:
   clear:
-    MUSCRIPTOR_MODEL: medium   # small | medium | large
-    MUSCRIPTOR_DEVICE: cpu     # cpu | cuda | auto
+    MUSCRIPTOR_MODEL: small   # small | medium | large
+    MUSCRIPTOR_DEVICE: cpu    # cpu | cuda | auto
 ```
 
-Then `kamal deploy`. Weights stay on the volume across deploys.
+## Cloudflare + long transcriptions
 
-## Cloudflare / long transcriptions
+`POST /transcribe` is SSE and can run for minutes. If the stream drops, use DNS-only for `ms` or trim audio in the UI.
 
-`POST /transcribe` is an **SSE** stream that can run for minutes on long audio.
-Some CDN proxies have short idle timeouts. If browsers drop mid-stream:
+## Fingerprint notes
 
-- Use DNS-only (no proxy) for the host, or  
-- Trim audio in the UI (multi-region trim is supported)
-
-## Local image smoke test
-
-```bash
-docker build -t muscriptor:local .
-docker run --rm -p 8000:8000 \
-  -e HF_TOKEN=$HF_TOKEN \
-  -e MUSCRIPTOR_MODEL=small \
-  -e MUSCRIPTOR_DEVICE=cpu \
-  -v muscriptor_hf_dev:/data/huggingface \
-  muscriptor:local
-
-curl -s http://127.0.0.1:8000/health
-open http://127.0.0.1:8000
-```
-
-## Files for Kamal
-
-| Path | Role |
-|------|------|
-| `config/deploy.yml` | Kamal service definition (placeholders) |
-| `bin/docker-entrypoint` | Port/model/device + HF volume seed |
-| `Dockerfile` | Multi-stage web+python, entrypoint, `/data` cache |
-| `.kamal/secrets.example` | Template only — no real credentials |
-| `docs/KAMAL.md` | This runbook |
-
-Upstream `swarm.yml` / `deploy.sh` remain for the original Kyutai GPU stack.
+- Hostname is short (`ms`), not a product landing domain.
+- Telemetry env: `HF_HUB_DISABLE_TELEMETRY`, `DO_NOT_TRACK`.
+- No extra public status page beyond `/health`.
+- Do not commit `.kamal/secrets` with raw tokens.

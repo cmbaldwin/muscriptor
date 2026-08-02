@@ -1,72 +1,69 @@
-# Kamal 2 — muscriptor (MuScriptor audio→MIDI).
-# Pattern: container registry + TLS at proxy + kamal-proxy health checks.
-#
-# Fill in host, servers, and registry for your environment.
-# First boot downloads gated HF weights — keep deploy_timeout high and a
-# Hugging Face cache volume mounted.
+# Kamal 2 — muscriptor (audio→MIDI service)
+# Shared moab host. Keep surface small: no extra public metadata, CPU/small model.
 
 service: muscriptor
-image: YOUR_REGISTRY_NAMESPACE/muscriptor   # e.g. myorg/muscriptor
+image: moab/muscriptor
 
 ssh:
   user: root
 
 servers:
   web:
-  - YOUR_SERVER_IP   # e.g. 203.0.113.10
+    - 5.223.51.74
 
-# Model load + first-time weight download can exceed Kamal's default.
+# Model load + first-time HF weight download can exceed defaults.
 deploy_timeout: 600
 drain_timeout: 30
 
 proxy:
   ssl:
-    # Prefer terminating TLS at Cloudflare/another edge, or use Let's Encrypt.
-    # If using origin PEMs from env (Cloudflare origin cert pattern):
     certificate_pem: <%= ENV['CLOUDFLARE_SSL_CERT_PEM'] %>
     private_key_pem: <%= ENV['CLOUDFLARE_SSL_KEY_PEM'] %>
-  host: muscriptor.example.com
+  # Short host keeps the public name quiet (not a marketing page).
+  host: ms.moab.jp
   app_port: 8000
   forward_headers: true
   healthcheck:
     path: /health
     interval: 10
-    # First container start loads the model into RAM — allow a slow first probe.
+    # First start loads the model — allow a slow first probe.
     timeout: 30
 
 registry:
-  # Example AWS ECR — replace with your registry.
   username: AWS
   password:
-  - AWS_ECR_PASSWORD
-  server: YOUR_AWS_ACCOUNT_ID.dkr.ecr.YOUR_REGION.amazonaws.com
+    - AWS_ECR_PASSWORD
+  server: 047719641231.dkr.ecr.ap-southeast-2.amazonaws.com
 
 env:
   secret:
-  - CLOUDFLARE_SSL_CERT_PEM
-  - CLOUDFLARE_SSL_KEY_PEM
-  # Gated MuScriptor weights on Hugging Face (accept license + token with read access)
-  - HF_TOKEN
+    - CLOUDFLARE_SSL_CERT_PEM
+    - CLOUDFLARE_SSL_KEY_PEM
+    - HF_TOKEN
   clear:
-    # CPU-friendly defaults — switch to medium/cuda on a GPU host.
+    # CPU-friendly defaults on the shared host (no GPU).
     MUSCRIPTOR_MODEL: small
     MUSCRIPTOR_DEVICE: cpu
     PORT: "8000"
-    # Keep HF cache on the volume (also set in Dockerfile)
     HF_HOME: /data/huggingface
     HUGGINGFACE_HUB_CACHE: /data/huggingface/hub
+    # Reduce hub chatter in logs
+    HF_HUB_DISABLE_TELEMETRY: "1"
+    DO_NOT_TRACK: "1"
 
-# Persist Hugging Face hub cache (model weights) across deploys.
+# Persist HF hub cache (weights) across deploys.
 volumes:
-- "muscriptor_hf_cache:/data/huggingface"
+  - "muscriptor_hf_cache:/data/huggingface"
 
 builder:
   arch: amd64
+  remote: ssh://escalante@escalante-ts
   dockerfile: Dockerfile
   context: .
+  provenance: false
+  sbom: false
 
 aliases:
   shell: app exec --interactive --reuse "bash"
   logs: app logs -f
-  # Quick smoke after deploy
   health: app exec "curl -sf http://127.0.0.1:8000/health"

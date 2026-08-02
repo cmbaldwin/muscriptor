@@ -42,13 +42,12 @@ The weights are then downloaded on first use and cached locally.
 
 ## Deploy (Kamal)
 
-Kamal 2 config is included (placeholders for your host/registry). See
-[docs/KAMAL.md](docs/KAMAL.md).
+Configured for the shared moab host as **`https://ms.moab.jp`** (CPU / `small` model). Details: [docs/KAMAL.md](docs/KAMAL.md).
 
 ```bash
 export HF_TOKEN=hf_...          # Hugging Face read token (gated weights)
 cp .kamal/secrets.example .kamal/secrets
-# edit config/deploy.yml: server IP, registry, hostname
+# one-time: CNAME ms.moab.jp + ECR moab/muscriptor (see docs/KAMAL.md)
 kamal setup                     # first time
 kamal deploy
 ```
