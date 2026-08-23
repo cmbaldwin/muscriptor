@@ -1,3 +1,7 @@
+# Production server: 5.223.44.132 ("moab"). All apps are consolidated onto this
+# single Hetzner box. 5.223.48.42, 5.223.51.74 and 5.223.54.207 are DECOMMISSIONED
+# — an SSH host-key warning for any of them is expected, not a compromise.
+
 # Kamal 2 — muscriptor (audio→MIDI service)
 # Shared moab host. Keep surface small: no extra public metadata, CPU/small model.
 
@@ -9,7 +13,7 @@ ssh:
 
 servers:
   web:
-    - 5.223.51.74
+    - 5.223.44.132
 
 # Model load + first-time HF weight download can exceed defaults.
 deploy_timeout: 600
