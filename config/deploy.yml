@@ -55,9 +55,10 @@ env:
 volumes:
   - "muscriptor_hf_cache:/data/huggingface"
 
+# Builds run locally with Docker on this machine. This host is arm64 and the
+# servers are amd64, so buildx cross-builds via emulation.
 builder:
   arch: amd64
-  remote: ssh://escalante@escalante-ts
   dockerfile: Dockerfile
   context: .
   provenance: false
