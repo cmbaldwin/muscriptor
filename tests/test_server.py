@@ -9,6 +9,7 @@ import wave
 from pathlib import Path
 from unittest.mock import create_autospec
 
+import pytest
 from fastapi.testclient import TestClient
 
 from muscriptor.events import NoteEndEvent, NoteStartEvent, ProgressEvent
@@ -218,3 +219,46 @@ def test_transcribe_rejects_undecodable_file():
         files={"file": ("mystery.mp3", b"\x00\x01 not audio \x02\x03", "audio/mpeg")},
     )
     assert resp.status_code == 400
+
+
+def test_transcribe_rejects_unknown_instruments(tmp_path):
+    client = TestClient(create_app(make_model()))
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("silent.wav", _wav_bytes(tmp_path), "audio/wav")},
+        data={"instruments": "not_a_real_instrument"},
+    )
+    assert resp.status_code == 400
+    assert "unknown instrument" in resp.json()["detail"]
+
+
+def test_transcribe_rejects_oversized_upload(tmp_path, monkeypatch):
+    """Uploads past the cap are rejected with 413, not buffered into RAM."""
+    import muscriptor.server as server_mod
+
+    monkeypatch.setattr(server_mod, "MAX_UPLOAD_BYTES", 16)
+    client = TestClient(create_app(make_model()))
+    resp = client.post(
+        "/transcribe",
+        files={"file": ("silent.wav", _wav_bytes(tmp_path), "audio/wav")},
+    )
+    assert resp.status_code == 413
+
+
+def test_auralize_hides_internal_errors(monkeypatch):
+    """FluidSynth tracebacks (local paths, command lines) must not leak to clients."""
+    import muscriptor.utils.auralization as aural_mod
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("fluidsynth exploded at /secret/local/path")
+
+    monkeypatch.setattr(aural_mod, "synthesize", boom)
+    client = TestClient(create_app(make_model()), raise_server_exceptions=False)
+    resp = client.post(
+        "/auralize",
+        files={"midi": ("song.mid", b"not-really-midi", "audio/midi")},
+        data={"mode": "synth"},
+    )
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "auralization failed"
+    assert "secret" not in resp.text

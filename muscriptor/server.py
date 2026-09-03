@@ -13,6 +13,7 @@ import base64
 import dataclasses
 import io
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -32,6 +33,37 @@ from muscriptor.tokenizer.mt3 import MT3_FULL_PLUS_GROUP_NAMES
 from muscriptor.transcription_model import TranscriptionModel
 from muscriptor.utils.audio import _read_non_wav_file, _read_wav_file
 from muscriptor.utils.download import download_if_necessary
+
+logger = logging.getLogger(__name__)
+
+# Largest accepted upload (audio or MIDI). Full-song WAVs are ~10 MB/min, so
+# 256 MB covers 25+ minutes while bounding per-request memory: uploads are
+# read in 1 MB chunks and rejected with 413 past the cap instead of
+# buffering an unbounded body into RAM.
+MAX_UPLOAD_BYTES = 256 * 1024 * 1024
+
+
+async def _read_upload_capped(
+    upload: UploadFile, *, limit: int | None = None
+) -> bytes:
+    """Read an upload, rejecting bodies larger than `limit` with HTTP 413."""
+    if limit is None:
+        limit = MAX_UPLOAD_BYTES
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file too large: '{upload.filename}' exceeds "
+                f"{limit // (1024 * 1024)} MB",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _make_release_once(lock: threading.Lock):
@@ -102,7 +134,7 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
         file: Annotated[UploadFile, File()],
         instruments: Annotated[list[str], Form(default_factory=list)],
     ) -> StreamingResponse:
-        data = await file.read()
+        data = await _read_upload_capped(file)
         # PCM WAV goes through the stdlib reader (keeps WAV decoding byte-for-byte
         # identical to the CLI); anything that isn't a readable WAV (mp3, flac,
         # ogg, m4a, …) falls back to soundfile/libsndfile. A genuinely
@@ -232,7 +264,7 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
                 status_code=400, detail="mode='mix' requires an audio file"
             )
 
-        midi_data = await midi.read()
+        midi_data = await _read_upload_capped(midi)
         tmp_paths: list[str] = []
 
         with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as tmp_midi:
@@ -248,7 +280,7 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
             if mode == "synth":
                 synthesize(midi_path=midi_tmp, output_path=out_tmp)
             else:
-                audio_data = await audio.read()
+                audio_data = await _read_upload_capped(audio)
                 suffix = Path(audio.filename or "audio.wav").suffix.lower() or ".wav"
                 with tempfile.NamedTemporaryFile(
                     suffix=suffix, delete=False
@@ -263,7 +295,10 @@ def create_app(model: TranscriptionModel, web_dir: str | Path | None = None) -> 
             with open(out_tmp, "rb") as f:
                 wav_bytes = f.read()
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            # FluidSynth/soundfile errors can embed local paths and command
+            # lines — log them server-side, report a generic 500 to the client.
+            logger.exception("auralization failed")
+            raise HTTPException(status_code=500, detail="auralization failed") from e
         finally:
             for p in tmp_paths:
                 if os.path.exists(p):
