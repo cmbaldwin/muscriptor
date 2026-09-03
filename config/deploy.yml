@@ -34,10 +34,10 @@ proxy:
     timeout: 30
 
 registry:
-  username: AWS
+  server: codys-mac-mini-1.tailabd61f.ts.net:5555
+  username: kamal
   password:
-    - AWS_ECR_PASSWORD
-  server: 047719641231.dkr.ecr.ap-southeast-2.amazonaws.com
+    - KAMAL_REGISTRY_PASSWORD
 
 env:
   secret:
