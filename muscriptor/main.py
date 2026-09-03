@@ -197,6 +197,18 @@ def transcribe(
 
     _device = None if device == "auto" else device
 
+    if auralize is not None and format != OutputFormat.midi:
+        typer.echo("Error: --auralize requires --format midi", err=True)
+        raise typer.Exit(1)
+
+    if auralize is not None and is_stdout:
+        typer.echo(
+            "Error: --auralize cannot be used with '-o -' "
+            "(stdout carries the MIDI bytes)",
+            err=True,
+        )
+        raise typer.Exit(1)
+
     # All chatty progress/timing info goes to stderr — stdout is reserved for
     # the actual output when `-o -` is used.
     typer.echo("Loading model…", err=True)
@@ -206,10 +218,6 @@ def transcribe(
     model._model = model._model.to(torch.float32)
 
     typer.echo(f"Transcribing {audio_file} …", err=True)
-
-    if auralize is not None and format != OutputFormat.midi:
-        typer.echo("Error: --auralize requires --format midi", err=True)
-        raise typer.Exit(1)
 
     kwargs = dict(
         audio=audio_file,
@@ -234,7 +242,7 @@ def transcribe(
             typer.echo(
                 "Re-run with --format json to inspect the event stream.", err=True
             )
-        if auralize is not None and not is_stdout:
+        if auralize is not None:
             from muscriptor.utils.auralization import auralize as do_auralize
 
             typer.echo(f"Auralizing → {auralize} …", err=True)

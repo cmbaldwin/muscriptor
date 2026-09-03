@@ -108,6 +108,37 @@ def test_progress_messages_go_to_stderr(patched_model, fake_audio):
     assert "Transcribing" not in result.stdout
 
 
+def test_auralize_rejected_with_stdout_output(patched_model, fake_audio):
+    """--auralize with -o - must fail loudly instead of silently doing nothing."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main_mod.app,
+        [
+            "transcribe",
+            str(fake_audio),
+            "-f",
+            "midi",
+            "-o",
+            "-",
+            "--auralize",
+            "mix.wav",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "--auralize cannot be used with '-o -'" in result.output
+
+
+def test_auralize_rejected_without_midi_format(patched_model, fake_audio):
+    """--auralize requires --format midi (checked before the model loads)."""
+    runner = CliRunner()
+    result = runner.invoke(
+        main_mod.app,
+        ["transcribe", str(fake_audio), "-f", "jsonl", "--auralize", "mix.wav"],
+    )
+    assert result.exit_code == 1
+    assert "--auralize requires --format midi" in result.output
+
+
 def test_jsonl_to_file_keeps_progress_on_stderr(patched_model, fake_audio, tmp_path):
     """Even when writing to a file, banners and "Saved JSONL to …" go to stderr."""
     out = tmp_path / "out.jsonl"
