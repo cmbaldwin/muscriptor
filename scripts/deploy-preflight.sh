@@ -17,7 +17,7 @@ grep -q 'path: /health' config/deploy.yml && pass "health /health" || die "healt
 command -v docker >/dev/null && docker info >/dev/null 2>&1 && pass "docker" || note "docker not ready"
 command -v aws >/dev/null && (aws sts get-caller-identity --profile default >/dev/null 2>&1 || aws sts get-caller-identity >/dev/null 2>&1) && pass "aws creds" || die "aws"
 [[ -n "${HF_TOKEN:-}" ]] && pass "HF_TOKEN set" || note "HF_TOKEN unset (needed first boot)"
-ssh -o BatchMode=yes -o ConnectTimeout=5 root@5.223.51.74 true 2>/dev/null && pass "ssh host" || die "ssh root@5.223.51.74"
+ssh -o BatchMode=yes -o ConnectTimeout=5 root@5.223.44.132 true 2>/dev/null && pass "ssh host" || die "ssh root@5.223.44.132"
 echo "=== $ok ok · $warn notes · $fail failures ==="
 [[ "$fail" -eq 0 ]] || exit 1
 echo "Ready: kamal deploy   (or bin/kamal deploy)"

@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+    - name: Run hermetic tests
+      # test_integration.py needs real weights + audio and is excluded;
+      # everything else runs with fakes (no model download, no GPU).
+      run: uv run --frozen --group dev pytest tests/ --ignore=tests/test_integration.py -q
