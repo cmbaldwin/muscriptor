@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import shutil
 import urllib.request
 from pathlib import Path
 from huggingface_hub import hf_hub_download
@@ -14,6 +15,10 @@ from huggingface_hub.utils import EntryNotFoundError
 
 
 _CACHE_DIR = Path.home() / ".cache" / "muscriptor"
+
+# Network stall bound for plain http(s) weight/soundfont downloads (the
+# huggingface_hub path has its own retry/timeout handling).
+_DOWNLOAD_TIMEOUT_S = 60
 
 
 class ModelDownloadError(RuntimeError):
@@ -69,7 +74,10 @@ def download_if_necessary(url: str | Path) -> Path:
         # Prefix the cache filename with a hash of the URL so two different URLs
         # that share a filename don't map to the same file.
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        filename = url.split("/")[-1].split("?")[0]
+        # A URL can end in "/" (or carry only a query string), leaving no
+        # filename — fall back to a fixed name so the hashed path is still a
+        # file, not the cache directory itself.
+        filename = url.split("/")[-1].split("?")[0] or "download"
         url_hash = hashlib.sha256(url.encode()).hexdigest()[:8]
         dest = _CACHE_DIR / f"{url_hash}_{filename}"
         if dest.exists():
@@ -80,7 +88,9 @@ def download_if_necessary(url: str | Path) -> Path:
         # it would be mistaken for a complete one forever after.
         tmp = dest.with_name(f"{dest.name}.part{os.getpid()}")
         try:
-            urllib.request.urlretrieve(url, tmp)
+            with urllib.request.urlopen(url, timeout=_DOWNLOAD_TIMEOUT_S) as resp:
+                with open(tmp, "wb") as f:
+                    shutil.copyfileobj(resp, f)
             os.replace(tmp, dest)
         finally:
             tmp.unlink(missing_ok=True)
