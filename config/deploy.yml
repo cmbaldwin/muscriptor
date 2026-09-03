@@ -34,7 +34,7 @@ proxy:
     timeout: 30
 
 registry:
-  server: codys-mac-mini-1.tailabd61f.ts.net:5555
+  server: escalante.tailabd61f.ts.net:5555
   username: kamal
   password:
     - KAMAL_REGISTRY_PASSWORD
